@@ -1,0 +1,59 @@
+name: Deploy python application to Kubernetes
+
+on:
+  push:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Configure Aws Credentials
+        id: creds
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+         role-to-assume: ${{secrets.role.deploy}}
+         role-skip-session-tagging: true
+         role-duration-seconds: 3600
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to DockerHub
+        id: docker_registry_login
+        username: ${{ secrets.DOCKER_USERNAME }} # We will save the user name in the Github secertes fetch from there in pipeline.
+        password: ${{ secrets.DOCKER_PASSWORD }} # We will save the password in the Github secertes fetch from there in pipeline.
+        run: |
+           echo docker_registry_uri=123456789012.dkr.ecr.us-west-2.amazonaws.com #dummy repo link
+           aws ecr get-login-password --region eu-east-1 | docker login --username ${{ secrets.aws_ecr_user}} --password ${{secrets.aws_ecr_user_password}} 12345678.dkr.ecr.eu-east-1.amazonaws.com
+
+      - name: Build and Push Docker Image
+        run: |
+          cd Docker
+          chmod u+x ./docker_build.sh
+          chmod u+x ./docker_pull.sh
+
+      - name: Set up kubectl for Minikube
+        run: |
+          curl -Lo kubectl https://storage.googleapis.com/kubernetes-release/release/v1.21.0/bin/linux/amd64/kubectl
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+      - name: Start Minikube Cluster
+        run: |
+          curl -Lo minikube https://storage.googleapis.com/minikube/releases/v1.23.2/minikube-linux-amd64
+          chmod +x minikube
+          sudo mv minikube /usr/local/bin/
+          minikube start --driver=docker
+
+      - name: Apply Kubernetes manifests
+        run: |
+          cd K8S
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+          kubectl apply -f hpa.yaml
+
+      - name: Get kubectl config to access the cluster
+        run: |
+          kubectl config use-context minikube
